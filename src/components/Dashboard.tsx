@@ -11,6 +11,7 @@ import {
   FileCheck2,
   FilePlus2,
   FileText,
+  Lock,
   Search,
   Settings,
   Trash2,
@@ -185,6 +186,19 @@ export function Dashboard({ initialDocuments, settings }: DashboardProps) {
               <FileCheck2 className="w-4 h-4" />
               <span>New Invoice</span>
             </Link>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await fetch("/api/auth/logout", { method: "POST" });
+                router.push("/login");
+                router.refresh();
+              }}
+              title="Lock Studio"
+              className="inline-flex items-center gap-1.5 px-2.5 py-2 rounded-lg text-sm font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 transition"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </header>
