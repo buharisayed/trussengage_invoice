@@ -231,14 +231,57 @@ function writeLocalDatabase(db: DatabaseSchema): void {
 }
 
 // Public async storage API
+export async function getDashboardData(): Promise<{
+  documents: DocumentRecord[];
+  settings: CompanySettings;
+}> {
+  if (getStorageMode() === "neon") {
+    const sql = getSql();
+    try {
+      const rows = await sql`
+        SELECT
+          (SELECT COALESCE(json_agg(data ORDER BY updated_at DESC), '[]'::json) FROM documents) AS documents,
+          (SELECT data FROM app_settings WHERE id = 'default' LIMIT 1) AS settings
+      `;
+      const row = rows[0] as
+        | { documents?: DocumentRecord[]; settings?: CompanySettings | null }
+        | undefined;
+      return {
+        documents: row?.documents ?? [],
+        settings: row?.settings ?? getDefaultSettings(),
+      };
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === "42P01") {
+        await ensureNeonSchema();
+        return getDashboardData();
+      }
+      throw err;
+    }
+  }
+
+  const db = readLocalDatabase();
+  const documents = [...db.documents].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+  );
+  return { documents, settings: db.settings };
+}
+
 export async function listDocuments(): Promise<DocumentRecord[]> {
   if (getStorageMode() === "neon") {
-    await ensureNeonSchema();
     const sql = getSql();
-    const rows = await sql`
-      SELECT data FROM documents ORDER BY updated_at DESC
-    `;
-    return rows.map((r) => r.data as DocumentRecord);
+    try {
+      const rows = await sql`
+        SELECT data FROM documents ORDER BY updated_at DESC
+      `;
+      return rows.map((r) => r.data as DocumentRecord);
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === "42P01") {
+        await ensureNeonSchema();
+        return listDocuments();
+      }
+      throw err;
+    }
   }
 
   const db = readLocalDatabase();
@@ -251,10 +294,17 @@ export async function getDocumentById(
   id: string
 ): Promise<DocumentRecord | undefined> {
   if (getStorageMode() === "neon") {
-    await ensureNeonSchema();
     const sql = getSql();
-    const rows = await sql`SELECT data FROM documents WHERE id = ${id}`;
-    return rows[0]?.data as DocumentRecord | undefined;
+    try {
+      const rows = await sql`SELECT data FROM documents WHERE id = ${id}`;
+      return rows[0]?.data as DocumentRecord | undefined;
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === "42P01") {
+        await ensureNeonSchema();
+        return getDocumentById(id);
+      }
+      throw err;
+    }
   }
 
   const db = readLocalDatabase();
@@ -358,18 +408,27 @@ export async function getSettingsAndClients(): Promise<{
   clients: ClientRecord[];
 }> {
   if (getStorageMode() === "neon") {
-    await ensureNeonSchema();
     const sql = getSql();
-    const settingsRows = await sql`
-      SELECT data FROM app_settings WHERE id = 'default'
-    `;
-    const clientRows = await sql`
-      SELECT data FROM clients ORDER BY created_at DESC
-    `;
-    const settings =
-      (settingsRows[0]?.data as CompanySettings | undefined) ?? getDefaultSettings();
-    const clients = clientRows.map((r) => r.data as ClientRecord);
-    return { settings, clients };
+    try {
+      const rows = await sql`
+        SELECT
+          (SELECT data FROM app_settings WHERE id = 'default' LIMIT 1) AS settings,
+          (SELECT COALESCE(json_agg(data ORDER BY created_at DESC), '[]'::json) FROM clients) AS clients
+      `;
+      const row = rows[0] as
+        | { settings?: CompanySettings | null; clients?: ClientRecord[] }
+        | undefined;
+      return {
+        settings: row?.settings ?? getDefaultSettings(),
+        clients: row?.clients ?? [],
+      };
+    } catch (err: unknown) {
+      if ((err as { code?: string })?.code === "42P01") {
+        await ensureNeonSchema();
+        return getSettingsAndClients();
+      }
+      throw err;
+    }
   }
 
   const db = readLocalDatabase();
