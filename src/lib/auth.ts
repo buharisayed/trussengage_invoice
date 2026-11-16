@@ -1,8 +1,9 @@
 export const SESSION_COOKIE_NAME = "te_session";
 const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
-function getSecret(): string {
-  return process.env.AUTH_SECRET || process.env.APP_PASSWORD || "fallback-dev-secret";
+function getSecret(): string | null {
+  const secret = process.env.AUTH_SECRET || process.env.APP_PASSWORD;
+  return secret && secret.length > 0 ? secret : null;
 }
 
 function toBase64Url(bytes: Uint8Array): string {
@@ -23,11 +24,11 @@ function fromBase64Url(str: string): Uint8Array {
   return bytes;
 }
 
-async function signPayload(payload: string): Promise<string> {
+async function signPayload(payload: string, secret: string): Promise<string> {
   const enc = new TextEncoder();
   const key = await crypto.subtle.importKey(
     "raw",
-    enc.encode(getSecret()),
+    enc.encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
@@ -37,14 +38,20 @@ async function signPayload(payload: string): Promise<string> {
 }
 
 export async function createSessionToken(): Promise<string> {
+  const secret = getSecret();
+  if (!secret) {
+    throw new Error("AUTH_SECRET or APP_PASSWORD must be configured");
+  }
   const exp = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
   const payload = `v1.${exp}`;
-  const sig = await signPayload(payload);
+  const sig = await signPayload(payload, secret);
   return `${payload}.${sig}`;
 }
 
 export async function verifySessionToken(token: string | undefined): Promise<boolean> {
-  if (!token) return false;
+  const secret = getSecret();
+  if (!secret || !token) return false;
+
   const parts = token.split(".");
   if (parts.length !== 3) return false;
   const [version, expStr, providedSig] = parts;
@@ -55,17 +62,20 @@ export async function verifySessionToken(token: string | undefined): Promise<boo
     return false;
   }
 
-  const expectedSig = await signPayload(`${version}.${expStr}`);
-  const a = fromBase64Url(providedSig);
-  const b = fromBase64Url(expectedSig);
-  if (a.length !== b.length) return false;
+  try {
+    const expectedSig = await signPayload(`${version}.${expStr}`, secret);
+    const a = fromBase64Url(providedSig);
+    const b = fromBase64Url(expectedSig);
+    if (a.length !== b.length) return false;
 
-  // Constant-time comparison
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) {
-    diff |= a[i] ^ b[i];
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) {
+      diff |= a[i] ^ b[i];
+    }
+    return diff === 0;
+  } catch {
+    return false;
   }
-  return diff === 0;
 }
 
 export function constantTimeEqual(a: string, b: string): boolean {
@@ -80,3 +90,11 @@ export function constantTimeEqual(a: string, b: string): boolean {
   return diff === 0;
 }
 
+export function sanitizeRedirectPath(nextPath: string | null | undefined): string {
+  if (!nextPath || typeof nextPath !== "string") return "/";
+  const trimmed = nextPath.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//") || trimmed.startsWith("/\\")) {
+    return "/";
+  }
+  return trimmed;
+}

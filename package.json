@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --experimental-strip-types --test src/lib/__tests__/calculations.test.ts"
+    "test": "node --experimental-strip-types --test src/lib/__tests__/*.test.ts",
+    "test:security": "node src/lib/__tests__/security.e2e.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.14.0",

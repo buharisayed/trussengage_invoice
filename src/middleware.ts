@@ -11,6 +11,10 @@ export async function middleware(request: NextRequest) {
     res.headers.set("X-Frame-Options", "DENY");
     res.headers.set("X-Content-Type-Options", "nosniff");
     res.headers.set("Referrer-Policy", "no-referrer");
+    res.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    if (pathname.startsWith("/api/")) {
+      res.headers.set("Cache-Control", "no-store");
+    }
     return res;
   };
 
@@ -22,7 +26,7 @@ export async function middleware(request: NextRequest) {
     return applySecurityHeaders(NextResponse.next());
   }
 
-  // If APP_PASSWORD is not configured, fail closed in production
+  // If APP_PASSWORD is not configured, fail closed
   const configuredPassword = process.env.APP_PASSWORD;
   if (!configuredPassword) {
     if (pathname.startsWith("/api/")) {
@@ -53,4 +57,3 @@ export async function middleware(request: NextRequest) {
 export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };
-

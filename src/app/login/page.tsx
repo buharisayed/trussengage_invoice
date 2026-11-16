@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Lock, ShieldCheck } from "lucide-react";
+import { sanitizeRedirectPath } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,7 +26,9 @@ export default function LoginPage() {
         setError(data.error || "Incorrect password");
         return;
       }
-      router.push("/");
+      const params = new URLSearchParams(window.location.search);
+      const nextUrl = sanitizeRedirectPath(params.get("next"));
+      router.push(nextUrl);
       router.refresh();
     } catch {
       setError("Network error. Please try again.");
